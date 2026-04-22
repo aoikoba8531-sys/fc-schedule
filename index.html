@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FC チームスケジュール</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+
+  :root {
+    --red: #E53E1A;
+    --red-dark: #B02E10;
+    --red-light: #FF6B35;
+    --orange: #FF8C42;
+    --cream: #FFF8F5;
+    --white: #FFFFFF;
+    --gray-100: #F5F5F5;
+    --gray-200: #E8E8E8;
+    --gray-400: #9E9E9E;
+    --gray-600: #5A5A5A;
+    --gray-900: #1A1A1A;
+    --shadow: 0 2px 12px rgba(229,62,26,0.10);
+    --radius: 12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Noto Sans JP', sans-serif;
+    background: var(--cream);
+    color: var(--gray-900);
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--red);
+    padding: 0 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .header-logo {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: white;
+    letter-spacing: 1px;
+  }
+  .header-sub { font-size: 11px; color: rgba(255,255,255,0.75); margin-top: -2px; }
+  .mode-switch {
+    display: flex;
+    background: rgba(0,0,0,0.2);
+    border-radius: 20px;
+    padding: 3px;
+    gap: 2px;
+  }
+  .mode-btn {
+    border: none;
+    background: none;
+    color: rgba(255,255,255,0.7);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 16px;
+    cursor: pointer;
+    font-family: 'Noto Sans JP', sans-serif;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .mode-btn.active {
+    background: white;
+    color: var(--red);
+    font-weight: 700;
+  }
+
+  /* MAIN */
+  .main { max-width: 700px; margin: 0 auto; padding: 16px 12px 80px; }
+
+  /* CALENDAR NAV */
+  .cal-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .nav-btn {
+    background: white;
+    border: 1.5px solid var(--gray-200);
+    border-radius: 8px;
+    width: 36px; height: 36px;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--gray-600);
+    transition: all 0.15s;
+  }
+  .nav-btn:hover { border-color: var(--red); color: var(--red); }
+  .month-label {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--gray-900);
+    letter-spacing: 1px;
+  }
+
+  /* CALENDAR */
+  .calendar {
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .dow-row {
+    display: grid;
+    grid-template-columns: repeat(7,1fr);
+    background: var(--red);
+  }
+  .dow {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 700;
+    color: rgba(255,255,255,0.85);
+    padding: 8px 0;
+  }
+  .dow.sun { color: #FFD0C4; }
+  .dow.sat { color: #C4D8FF; }
+
+  .cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7,1fr);
+    border-top: 1px solid var(--gray-100);
+  }
+  .day-cell {
+    min-height: 70px;
+    padding: 6px 4px 4px;
+    border-right: 1px solid var(--gray-100);
+    border-bottom: 1px solid var(--gray-100);
+    cursor: pointer;
+    transition: background 0.15s;
+    position: relative;
+  }
+  .day-cell:hover { background: #FFF0EB; }
+  .day-cell.other-month { background: var(--gray-100); opacity: 0.5; pointer-events: none; }
+  .day-cell.today { background: #FFF0EB; }
+  .day-num {
+    font-size: 13px;
+    font-weight: 500;
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    margin-bottom: 3px;
+    color: var(--gray-900);
+  }
+  .day-cell.today .day-num {
+    background: var(--red);
+    color: white;
+    font-weight: 700;
+  }
+  .day-cell.sunday .day-num { color: #C0392B; }
+  .day-cell.saturday .day-num { color: #2471A3; }
+  .day-cell.other-month .day-num { color: var(--gray-400); }
+
+  .event-pill {
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 4px;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+  }
+  .pill-practice { background: #FDDDD7; color: #922B21; }
+  .pill-game { background: #FDEBD0; color: #784212; }
+  .pill-meeting { background: #D6EAF8; color: #1A5276; }
+
+  /* LEGEND */
+  .legend {
+    display: flex;
+    gap: 12px;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow);
+    flex-wrap: wrap;
+  }
+  .leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--gray-600); }
+  .leg-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+  /* ADMIN ADD BTN */
+  .fab {
+    position: fixed;
+    bottom: 24px;
+    right: 20px;
+    background: var(--red);
+    color: white;
+    border: none;
+    border-radius: 28px;
+    padding: 14px 20px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: 'Noto Sans JP', sans-serif;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(229,62,26,0.4);
+    display: none;
+    align-items: center;
+    gap: 6px;
+    transition: transform 0.15s, box-shadow 0.15s;
+    z-index: 40;
+  }
+  .fab:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(229,62,26,0.5); }
+  .fab.visible { display: flex; }
+
+  /* MODAL */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 100;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+  }
+  .overlay.open { display: flex; }
+  @media(min-width:600px){
+    .overlay { align-items: center; padding: 16px; }
+  }
+
+  .modal {
+    background: white;
+    border-radius: 20px 20px 0 0;
+    width: 100%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    animation: slideUp 0.25s ease;
+  }
+  @media(min-width:600px){
+    .modal { border-radius: 16px; }
+  }
+  @keyframes slideUp {
+    from { transform: translateY(40px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+
+  .modal-header {
+    background: var(--red);
+    padding: 16px 20px;
+    border-radius: 20px 20px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  @media(min-width:600px){ .modal-header { border-radius: 16px 16px 0 0; } }
+  .modal-title { font-size: 18px; font-weight: 700; color: white; }
+  .modal-date { font-size: 12px; color: rgba(255,255,255,0.8); margin-top: 2px; }
+  .close-btn { background: none; border: none; color: white; font-size: 22px; cursor: pointer; line-height: 1; padding: 0 0 0 8px; }
+
+  .modal-body { padding: 16px 20px; }
+
+  .type-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-bottom: 14px;
+  }
+  .badge-practice { background: #FDDDD7; color: #922B21; }
+  .badge-game { background: #FDEBD0; color: #784212; }
+  .badge-meeting { background: #D6EAF8; color: #1A5276; }
+
+  .detail-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .detail-row { display: flex; gap: 10px; align-items: flex-start; }
+  .detail-icon { font-size: 14px; width: 20px; text-align: center; margin-top: 1px; }
+  .detail-text { font-size: 14px; color: var(--gray-900); }
+  .detail-label { font-size: 11px; color: var(--gray-400); }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid var(--red);
+    display: inline-block;
+  }
+
+  .member-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .member-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    background: var(--gray-100);
+    border-radius: 8px;
+  }
+  .member-name { font-size: 13px; font-weight: 500; }
+  .att-btns { display: flex; gap: 4px; }
+  .att-btn {
+    border: 1.5px solid var(--gray-200);
+    background: white;
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: 'Noto Sans JP', sans-serif;
+    transition: all 0.15s;
+    color: var(--gray-600);
+  }
+  .att-btn:hover { border-color: var(--gray-400); }
+  .att-btn.yes { background: #EAFAF1; border-color: #27AE60; color: #1E8449; font-weight: 700; }
+  .att-btn.maybe { background: #FEF9E7; border-color: #F39C12; color: #9A7D0A; font-weight: 700; }
+  .att-btn.no { background: #FDEDEC; border-color: #E74C3C; color: #C0392B; font-weight: 700; }
+
+  .att-summary {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--gray-100);
+    border-radius: 8px;
+    margin-top: 8px;
+  }
+  .sum-item { font-size: 12px; color: var(--gray-600); }
+  .sum-num { font-weight: 700; font-size: 14px; }
+  .sum-yes { color: #1E8449; }
+  .sum-maybe { color: #9A7D0A; }
+  .sum-no { color: #C0392B; }
+
+  /* ADMIN FORM */
+  .admin-form { display: flex; flex-direction: column; gap: 12px; }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-label { font-size: 12px; font-weight: 700; color: var(--gray-600); }
+  .form-input, .form-select, .form-textarea {
+    border: 1.5px solid var(--gray-200);
+    border-radius: 8px;
+    padding: 9px 12px;
+    font-size: 14px;
+    font-family: 'Noto Sans JP', sans-serif;
+    color: var(--gray-900);
+    background: white;
+    transition: border-color 0.15s;
+    width: 100%;
+  }
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    outline: none;
+    border-color: var(--red);
+  }
+  .form-textarea { resize: vertical; min-height: 70px; }
+
+  .submit-btn {
+    background: var(--red);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    font-family: 'Noto Sans JP', sans-serif;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 4px;
+  }
+  .submit-btn:hover { background: var(--red-dark); }
+
+  .delete-btn {
+    background: none;
+    border: 1.5px solid #E74C3C;
+    color: #E74C3C;
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 13px;
+    font-weight: 700;
+    font-family: 'Noto Sans JP', sans-serif;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .delete-btn:hover { background: #FDEDEC; }
+
+  .admin-badge {
+    background: #FEF9E7;
+    border: 1px solid #F39C12;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: #9A7D0A;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 40px;
+    color: var(--gray-400);
+    font-size: 14px;
+  }
+
+  .empty-day {
+    padding: 20px;
+    text-align: center;
+    color: var(--gray-400);
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <div>
+      <div class="header-logo">⚽ FC SCHEDULE</div>
+      <div class="header-sub">チームスケジュール管理</div>
+    </div>
+  </div>
+  <div class="mode-switch">
+    <button class="mode-btn active" onclick="setMode('member')" id="btn-member">メンバー</button>
+    <button class="mode-btn" onclick="setMode('admin')" id="btn-admin">管理者</button>
+  </div>
+</div>
+
+<div class="main">
+  <div class="cal-nav">
+    <button class="nav-btn" onclick="changeMonth(-1)">◀</button>
+    <div class="month-label" id="month-label"></div>
+    <button class="nav-btn" onclick="changeMonth(1)">▶</button>
+  </div>
+
+  <div class="calendar">
+    <div class="dow-row">
+      <div class="dow sun">日</div>
+      <div class="dow">月</div>
+      <div class="dow">火</div>
+      <div class="dow">水</div>
+      <div class="dow">木</div>
+      <div class="dow">金</div>
+      <div class="dow sat">土</div>
+    </div>
+    <div class="cal-grid" id="cal-grid"></div>
+  </div>
+
+  <div class="legend">
+    <div class="leg"><div class="leg-dot" style="background:#F1948A;"></div>練習</div>
+    <div class="leg"><div class="leg-dot" style="background:#F0B27A;"></div>試合</div>
+    <div class="leg"><div class="leg-dot" style="background:#85C1E9;"></div>ミーティング</div>
+  </div>
+</div>
+
+<button class="fab" id="fab" onclick="openAddModal()">＋ 予定を追加</button>
+
+<!-- 予定詳細モーダル -->
+<div class="overlay" id="detail-modal" onclick="closeModal('detail-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header" id="detail-header">
+      <div>
+        <div class="modal-title" id="detail-title"></div>
+        <div class="modal-date" id="detail-date"></div>
+      </div>
+      <button class="close-btn" onclick="closeModal('detail-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="detail-body"></div>
+  </div>
+</div>
+
+<!-- 予定追加モーダル -->
+<div class="overlay" id="add-modal" onclick="closeModal('add-modal')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">予定を追加</div>
+        <div class="modal-date">管理者モード</div>
+      </div>
+      <button class="close-btn" onclick="closeModal('add-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">日付</label>
+          <input type="date" class="form-input" id="add-date">
+        </div>
+        <div class="form-group">
+          <label class="form-label">タイトル</label>
+          <input type="text" class="form-input" id="add-title" placeholder="例：火曜練習、リーグ戦第5節">
+        </div>
+        <div class="form-group">
+          <label class="form-label">種別</label>
+          <select class="form-select" id="add-type">
+            <option value="practice">練習</option>
+            <option value="game">試合</option>
+            <option value="meeting">ミーティング</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">時間</label>
+          <input type="text" class="form-input" id="add-time" placeholder="例：19:00〜21:00">
+        </div>
+        <div class="form-group">
+          <label class="form-label">場所</label>
+          <input type="text" class="form-input" id="add-place" placeholder="例：市営グラウンドA">
+        </div>
+        <div class="form-group">
+          <label class="form-label">備考</label>
+          <textarea class="form-textarea" id="add-note" placeholder="その他の情報があれば入力してください"></textarea>
+        </div>
+        <button class="submit-btn" onclick="addEvent()">保存する</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, onSnapshot, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyCrjIe40Stmq9CSZRm2tmeiLjkS09GduXU",
+    authDomain: "fc-team-schedule-740fe.firebaseapp.com",
+    projectId: "fc-team-schedule-740fe",
+    storageBucket: "fc-team-schedule-740fe.firebasestorage.app",
+    messagingSenderId: "633062423714",
+    appId: "1:633062423714:web:45e85bad4637a88a1aabfb"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  window._db = db;
+  window._fns = { collection, doc, setDoc, getDocs, deleteDoc, onSnapshot, query, where };
+
+  const today = new Date();
+  let curYear = today.getFullYear();
+  let curMonth = today.getMonth();
+  let isAdmin = false;
+  let eventsCache = {};
+  let currentEventId = null;
+
+  const members = ['田中','鈴木','佐藤','高橋','伊藤','渡辺','山本','中村','小林','加藤','吉田'];
+
+  window.setMode = function(m) {
+    isAdmin = m === 'admin';
+    document.getElementById('btn-member').classList.toggle('active', !isAdmin);
+    document.getElementById('btn-admin').classList.toggle('active', isAdmin);
+    const fab = document.getElementById('fab');
+    isAdmin ? fab.classList.add('visible') : fab.classList.remove('visible');
+    renderCalendar();
+  };
+
+  window.changeMonth = function(d) {
+    curMonth += d;
+    if (curMonth > 11) { curMonth = 0; curYear++; }
+    if (curMonth < 0) { curMonth = 11; curYear--; }
+    loadEvents();
+  };
+
+  async function loadEvents() {
+    document.getElementById('cal-grid').innerHTML = '<div class="loading" style="grid-column:1/-1">読み込み中...</div>';
+    const monthKey = `${curYear}-${String(curMonth+1).padStart(2,'0')}`;
+    const snap = await getDocs(collection(db, 'events'));
+    eventsCache = {};
+    snap.forEach(d => {
+      const data = d.data();
+      if (data.date && data.date.startsWith(monthKey)) {
+        eventsCache[data.date] = { id: d.id, ...data };
+      }
+    });
+    renderCalendar();
+  }
+
+  window.renderCalendar = function() {
+    document.getElementById('month-label').textContent = `${curYear}年 ${curMonth+1}月`;
+    const grid = document.getElementById('cal-grid');
+    grid.innerHTML = '';
+    const first = new Date(curYear, curMonth, 1).getDay();
+    const last = new Date(curYear, curMonth+1, 0).getDate();
+    const prevLast = new Date(curYear, curMonth, 0).getDate();
+
+    for (let i = 0; i < first; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'day-cell other-month';
+      cell.innerHTML = `<div class="day-num">${prevLast - first + 1 + i}</div>`;
+      grid.appendChild(cell);
+    }
+    for (let d = 1; d <= last; d++) {
+      const dow = (first + d - 1) % 7;
+      const isToday = d === today.getDate() && curMonth === today.getMonth() && curYear === today.getFullYear();
+      let cls = 'day-cell';
+      if (dow === 0) cls += ' sunday';
+      if (dow === 6) cls += ' saturday';
+      if (isToday) cls += ' today';
+      const cell = document.createElement('div');
+      cell.className = cls;
+      const dateKey = `${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const ev = eventsCache[dateKey];
+      cell.innerHTML = `<div class="day-num">${d}</div>`;
+      if (ev) {
+        const pill = document.createElement('div');
+        pill.className = `event-pill pill-${ev.type}`;
+        pill.textContent = ev.title;
+        cell.appendChild(pill);
+        cell.onclick = () => openDetailModal(dateKey);
+      }
+      grid.appendChild(cell);
+    }
+    const remain = 7 - ((first + last) % 7 || 7);
+    for (let i = 1; i <= remain && remain < 7; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'day-cell other-month';
+      cell.innerHTML = `<div class="day-num">${i}</div>`;
+      grid.appendChild(cell);
+    }
+  };
+
+  window.openDetailModal = async function(dateKey) {
+    const ev = eventsCache[dateKey];
+    if (!ev) return;
+    currentEventId = ev.id;
+    const typeLabel = { practice:'練習', game:'試合', meeting:'ミーティング' };
+    const badgeCls = { practice:'badge-practice', game:'badge-game', meeting:'badge-meeting' };
+    document.getElementById('detail-title').textContent = ev.title;
+    document.getElementById('detail-date').textContent = dateKey;
+
+    const attSnap = await getDocs(collection(db, 'events', ev.id, 'attendance'));
+    const att = {};
+    attSnap.forEach(d => { att[d.id] = d.data().status; });
+
+    const yes = Object.values(att).filter(v => v==='yes').length;
+    const no = Object.values(att).filter(v => v==='no').length;
+    const maybe = Object.values(att).filter(v => v==='maybe').length;
+
+    const memberRows = members.map(m => `
+      <div class="member-row" id="mrow-${m}">
+        <span class="member-name">${m}</span>
+        <div class="att-btns">
+          <button class="att-btn ${att[m]==='yes'?'yes':''}" onclick="setAtt('${ev.id}','${m}','yes')">○</button>
+          <button class="att-btn ${att[m]==='maybe'?'maybe':''}" onclick="setAtt('${ev.id}','${m}','maybe')">△</button>
+          <button class="att-btn ${att[m]==='no'?'no':''}" onclick="setAtt('${ev.id}','${m}','no')">✕</button>
+        </div>
+      </div>`).join('');
+
+    document.getElementById('detail-body').innerHTML = `
+      ${isAdmin ? `<div class="admin-badge">🔑 管理者モード</div>` : ''}
+      <span class="type-badge ${badgeCls[ev.type]}">${typeLabel[ev.type]}</span>
+      <div class="detail-grid">
+        <div class="detail-row"><div class="detail-icon">🕐</div><div><div class="detail-label">日時</div><div class="detail-text">${ev.time||'未設定'}</div></div></div>
+        <div class="detail-row"><div class="detail-icon">📍</div><div><div class="detail-label">場所</div><div class="detail-text">${ev.place||'未設定'}</div></div></div>
+        ${ev.note ? `<div class="detail-row"><div class="detail-icon">📝</div><div><div class="detail-label">備考</div><div class="detail-text">${ev.note}</div></div></div>` : ''}
+      </div>
+      <div class="section-title">参加可否</div>
+      <div class="member-list">${memberRows}</div>
+      <div class="att-summary" id="att-summary">
+        <div class="sum-item">参加 <span class="sum-num sum-yes" id="s-yes">${yes}</span></div>
+        <div class="sum-item">未定 <span class="sum-num sum-maybe" id="s-maybe">${maybe}</span></div>
+        <div class="sum-item">不参加 <span class="sum-num sum-no" id="s-no">${no}</span></div>
+      </div>
+      ${isAdmin ? `<div style="margin-top:14px;"><button class="delete-btn" onclick="deleteEvent('${ev.id}','${dateKey}')">この予定を削除する</button></div>` : ''}
+    `;
+    document.getElementById('detail-modal').classList.add('open');
+  };
+
+  window.setAtt = async function(eventId, member, val) {
+    const attRef = doc(db, 'events', eventId, 'attendance', member);
+    const current = document.querySelector(`#mrow-${member} .att-btn.yes`) ? 'yes'
+      : document.querySelector(`#mrow-${member} .att-btn.maybe`) ? 'maybe'
+      : document.querySelector(`#mrow-${member} .att-btn.no`) ? 'no' : null;
+    const newVal = current === val ? null : val;
+    if (newVal) {
+      await setDoc(attRef, { status: newVal });
+    } else {
+      await deleteDoc(attRef);
+    }
+    // UI更新
+    const btns = document.querySelectorAll(`#mrow-${member} .att-btn`);
+    btns.forEach((btn, i) => {
+      btn.className = 'att-btn';
+      if (i===0 && newVal==='yes') btn.className = 'att-btn yes';
+      if (i===1 && newVal==='maybe') btn.className = 'att-btn maybe';
+      if (i===2 && newVal==='no') btn.className = 'att-btn no';
+    });
+    // サマリー再計算
+    const allBtns = document.querySelectorAll('.member-row');
+    let y=0, n=0, mb=0;
+    allBtns.forEach(row => {
+      if (row.querySelector('.att-btn.yes')) y++;
+      else if (row.querySelector('.att-btn.maybe')) mb++;
+      else if (row.querySelector('.att-btn.no')) n++;
+    });
+    document.getElementById('s-yes').textContent = y;
+    document.getElementById('s-maybe').textContent = mb;
+    document.getElementById('s-no').textContent = n;
+  };
+
+  window.openAddModal = function() {
+    const today2 = new Date();
+    document.getElementById('add-date').value = `${today2.getFullYear()}-${String(today2.getMonth()+1).padStart(2,'0')}-${String(today2.getDate()).padStart(2,'0')}`;
+    document.getElementById('add-title').value = '';
+    document.getElementById('add-type').value = 'practice';
+    document.getElementById('add-time').value = '';
+    document.getElementById('add-place').value = '';
+    document.getElementById('add-note').value = '';
+    document.getElementById('add-modal').classList.add('open');
+  };
+
+  window.addEvent = async function() {
+    const date = document.getElementById('add-date').value;
+    const title = document.getElementById('add-title').value.trim();
+    if (!date || !title) { alert('日付とタイトルは必須です'); return; }
+    const eventId = `evt-${date}-${Date.now()}`;
+    await setDoc(doc(db, 'events', eventId), {
+      date, title,
+      type: document.getElementById('add-type').value,
+      time: document.getElementById('add-time').value,
+      place: document.getElementById('add-place').value,
+      note: document.getElementById('add-note').value,
+    });
+    closeModal('add-modal');
+    await loadEvents();
+    alert('予定を追加しました！');
+  };
+
+  window.deleteEvent = async function(eventId, dateKey) {
+    if (!confirm('この予定を削除しますか？')) return;
+    await deleteDoc(doc(db, 'events', eventId));
+    delete eventsCache[dateKey];
+    closeModal('detail-modal');
+    renderCalendar();
+    alert('予定を削除しました');
+  };
+
+  window.closeModal = function(id) {
+    document.getElementById(id).classList.remove('open');
+  };
+
+  loadEvents();
+</script>
+</body>
+</html>
