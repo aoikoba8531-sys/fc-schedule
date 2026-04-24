@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>クラブスケジュール管理</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700;900&family=Oswald:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: 'Noto Sans JP', sans-serif; background: #f8f8f8; margin: 0; color: #1a1a1a; }
+    .oswald { font-family: 'Oswald', sans-serif; }
+
+    /* ── type badges ── */
+    .badge-match    { background:#fef2f2; color:#dc2626; border-left:3px solid #dc2626; }
+    .badge-practice { background:#f0f9ff; color:#0369a1; border-left:3px solid #0ea5e9; }
+    .badge-event    { background:#fefce8; color:#b45309; border-left:3px solid #f59e0b; }
+    .badge-other    { background:#f5f3ff; color:#6d28d9; border-left:3px solid #8b5cf6; }
+    .dot-match    { background:#dc2626; }
+    .dot-practice { background:#0ea5e9; }
+    .dot-event    { background:#f59e0b; }
+    .dot-other    { background:#8b5cf6; }
+
+    /* ── main calendar ── */
+    .calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); }
+    .day-cell { min-height:80px; }
+    @media (max-width:640px) { .day-cell { min-height:56px; } }
+
+    /* ── mini picker calendar ── */
+    .picker-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+    .pday {
+      aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+      border-radius:6px; font-size:12px; font-weight:600; cursor:pointer;
+      border:1.5px solid transparent; color:#374151; transition:all 0.1s; user-select:none;
+    }
+    .pday:hover:not(.pdisabled) { background:#fee2e2; color:#dc2626; }
+    .pday.pselected { background:#dc2626 !important; color:#fff !important; border-color:#dc2626 !important; }
+    .pday.ptoday   { border-color:#dc2626; color:#dc2626; }
+    .pday.ptoday.pselected { background:#dc2626; color:#fff; }
+    .pday.prepeat  { background:#fef2f2; color:#dc2626; border-color:#fca5a5; }
+    .pday.pdisabled { color:#d1d5db; cursor:default; pointer-events:none; }
+    .pday.psun { color:#ef4444; }
+    .pday.psat { color:#3b82f6; }
+    .pday.pselected.psun,.pday.pselected.psat { color:#fff; }
+
+    /* ── date chip ── */
+    .chip { display:inline-flex; align-items:center; gap:3px; background:#fef2f2; color:#dc2626;
+            border:1px solid #fca5a5; border-radius:999px; padding:2px 8px; font-size:11px; font-weight:600; }
+    .chip-x { line-height:1; font-size:14px; cursor:pointer; background:none; border:none; color:#ef4444; padding:0; }
+
+    /* ── modals ── */
+    .modal-backdrop { animation:fadeIn 0.15s ease; }
+    .modal-box      { animation:slideUp 0.2s ease; }
+    @keyframes fadeIn  { from{opacity:0} to{opacity:1} }
+    @keyframes slideUp { from{transform:translateY(30px);opacity:0} to{transform:translateY(0);opacity:1} }
+
+    /* ── presence ── */
+    .presence-btn { transition:all 0.15s; }
+    .presence-btn:hover { transform:translateY(-1px); }
+    .presence-btn.active-present { background:#16a34a; color:#fff; border-color:#16a34a; }
+    .presence-btn.active-absent  { background:#dc2626; color:#fff; border-color:#dc2626; }
+    .presence-btn.active-pending { background:#d97706; color:#fff; border-color:#d97706; }
+
+    /* ── tab ── */
+    .tab-btn { transition:all 0.12s; border-radius:8px; padding:6px 0; font-size:12px; font-weight:700; cursor:pointer; border:none; }
+    .tab-btn.tab-on  { background:#dc2626; color:#fff; }
+    .tab-btn.tab-off { background:#f3f4f6; color:#6b7280; }
+    .tab-btn.tab-off:hover { background:#fee2e2; color:#dc2626; }
+
+    ::-webkit-scrollbar { width:4px; }
+    ::-webkit-scrollbar-thumb { background:#e5e7eb; border-radius:4px; }
+    .event-card { transition:box-shadow 0.15s,transform 0.15s; }
+    .event-card:hover { box-shadow:0 4px 20px rgba(220,38,38,0.10); transform:translateY(-1px); }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useMemo, useCallback } = React;
+
+// ── constants ──────────────────────────────────────────────────────────────────
+const STORAGE_KEY = 'club_schedule_v3';
+const TYPE_LABEL  = { match:'試合', practice:'練習', event:'イベント', other:'その他' };
+const TYPE_CLASS  = { match:'badge-match', practice:'badge-practice', event:'badge-event', other:'badge-other' };
+const DOT_CLASS   = { match:'dot-match', practice:'dot-practice', event:'dot-event', other:'dot-other' };
+const MEMBERS     = ['田中 一郎','鈴木 次郎','佐藤 三郎','高橋 花子','伊藤 五月','渡辺 六花','中村 七海','小林 八男'];
+const JP_DOW      = ['日','月','火','水','木','金','土'];
+
+const initialAttendance = () => Object.fromEntries(MEMBERS.map(m=>[m,'pending']));
+
+function daysInMonth(y,m) { return new Date(y,m+1,0).getDate(); }
+function firstDow(y,m)    { return new Date(y,m,1).getDay(); }
+function toStr(y,m,d)     { return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+function parseStr(s)      { const [y,mo,d]=s.split('-').map(Number); return new Date(y,mo-1,d); }
+
+const NOW = new Date();
+const todayStr = toStr(NOW.getFullYear(), NOW.getMonth(), NOW.getDate());
+
+const defaultSchedules = [
+  { id:'1', date:'2025-04-05', title:'春季リーグ戦 第1節', type:'match',    place:'市営球技場 A面',    time:'14:00〜16:30', body:'春季リーグ戦の開幕節。対戦相手は東城FC。',
+    attendance: Object.fromEntries(MEMBERS.map((m,i)=>[m,['present','present','absent','pending','present','present','absent','present'][i]])) },
+  { id:'2', date:'2025-04-09', title:'週次練習', type:'practice', place:'第2グラウンド', time:'19:00〜21:00', body:'基礎フィジカル＆戦術確認。', attendance:initialAttendance() },
+  { id:'3', date:'2025-04-13', title:'週次練習', type:'practice', place:'第2グラウンド', time:'19:00〜21:00', body:'セットプレー重点練習。',    attendance:initialAttendance() },
+  { id:'4', date:'2025-04-19', title:'春季リーグ戦 第2節', type:'match', place:'南公園陸上競技場', time:'13:00〜15:30', body:'リーグ2戦目。', attendance:initialAttendance() },
+  { id:'5', date:'2025-04-23', title:'チームミーティング', type:'event', place:'クラブハウス会議室', time:'20:00〜21:30', body:'今期の戦略方針を共有。', attendance:initialAttendance() },
+  { id:'6', date:'2025-04-27', title:'週次練習', type:'practice', place:'第2グラウンド', time:'19:00〜21:00', body:'試合前最終調整。', attendance:initialAttendance() },
+];
+
+function loadData() {
+  try { const r=localStorage.getItem(STORAGE_KEY); if(r) return JSON.parse(r); } catch(e){}
+  return defaultSchedules;
+}
+function saveData(d) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(d)); } catch(e){} }
+
+// ── AttendanceSummary ──────────────────────────────────────────────────────────
+function AttendanceSummary({ attendance }) {
+  const c={present:0,absent:0,pending:0};
+  Object.values(attendance).forEach(v=>c[v]++);
+  return (
+    <div className="flex gap-2 text-xs font-semibold flex-shrink-0">
+      <span className="text-green-600">✓{c.present}</span>
+      <span className="text-red-500">✗{c.absent}</span>
+      <span className="text-amber-500">?{c.pending}</span>
+    </div>
+  );
+}
+
+// ── MultiDatePicker ────────────────────────────────────────────────────────────
+// mode: 'single' | 'multi' | 'repeat'
+// selectedDates: string[]  (sorted)
+// onChange: (dates: string[]) => void
+function MultiDatePicker({ selectedDates, onChange }) {
+  const [mode, setMode]         = useState('single');
+  const [py, setPy]             = useState(NOW.getFullYear());
+  const [pm, setPm]             = useState(NOW.getMonth());
+  // repeat settings
+  const [rDows, setRDows]       = useState([]);          // selected weekdays [0-6]
+  const [rFromY, setRFromY]     = useState(NOW.getFullYear());
+  const [rFromM, setRFromM]     = useState(NOW.getMonth());
+  const [rToY, setRToY]         = useState(NOW.getFullYear());
+  const [rToM, setRToM]         = useState(NOW.getMonth()+1 > 11 ? 11 : NOW.getMonth()+1);
+
+  const selSet = useMemo(()=>new Set(selectedDates),[selectedDates]);
+  const days   = daysInMonth(py,pm);
+  const fst    = firstDow(py,pm);
+
+  // build "repeat preview" dates within picker month
+  const repeatInMonth = useMemo(()=>{
+    if(mode!=='repeat'||rDows.length===0) return new Set();
+    const from = new Date(rFromY,rFromM,1);
+    const to   = new Date(rToY,rToM+1,0);
+    const set  = new Set();
+    for(let d=1;d<=days;d++){
+      const dt=new Date(py,pm,d);
+      if(dt>=from&&dt<=to&&rDows.includes(dt.getDay())) set.add(toStr(py,pm,d));
+    }
+    return set;
+  },[mode,rDows,rFromY,rFromM,rToY,rToM,py,pm,days]);
+
+  // compute all repeat dates across range
+  function computeRepeatDates() {
+    const from = new Date(rFromY,rFromM,1);
+    const to   = new Date(rToY,rToM+1,0);
+    const arr  = [];
+    let cur = new Date(from);
+    while(cur<=to){
+      if(rDows.includes(cur.getDay())) arr.push(toStr(cur.getFullYear(),cur.getMonth(),cur.getDate()));
+      cur.setDate(cur.getDate()+1);
+    }
+    return arr;
+  }
+
+  function applyRepeat() {
+    if(rDows.length===0) return;
+    const dates = computeRepeatDates();
+    // merge with existing single-picked dates
+    const merged = [...new Set([...selectedDates,...dates])].sort();
+    onChange(merged);
+  }
+
+  function toggleDay(ds) {
+    if(mode==='single') { onChange([ds]); return; }
+    // multi
+    if(selSet.has(ds)) onChange(selectedDates.filter(x=>x!==ds));
+    else onChange([...selectedDates,ds].sort());
+  }
+
+  function toggleDow(dow) {
+    setRDows(prev=>prev.includes(dow)?prev.filter(x=>x!==dow):[...prev,dow].sort());
+  }
+
+  const prevM=()=>{ if(pm===0){setPy(y=>y-1);setPm(11);}else setPm(m=>m-1); };
+  const nextM=()=>{ if(pm===11){setPy(y=>y+1);setPm(0);}else setPm(m=>m+1); };
+
+  // months for selects
+  const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+  const YEARS  = Array.from({length:3},(_,i)=>NOW.getFullYear()+i);
+
+  return (
+    <div className="space-y-3">
+      {/* mode tabs */}
+      <div className="grid grid-cols-3 gap-1 bg-gray-100 p-1 rounded-xl">
+        {[['single','単日'],['multi','複数選択'],['repeat','繰り返し']].map(([v,l])=>(
+          <button key={v} onClick={()=>setMode(v)} className={`tab-btn ${mode===v?'tab-on':'tab-off'}`}>{l}</button>
+        ))}
+      </div>
+
+      {/* ── repeat settings panel ── */}
+      {mode==='repeat' && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-3 space-y-3">
+          {/* weekday toggles */}
+          <div>
+            <p className="text-xs font-bold text-gray-500 mb-2">繰り返す曜日</p>
+            <div className="flex gap-1.5">
+              {JP_DOW.map((label,i)=>(
+                <button key={i} onClick={()=>toggleDow(i)}
+                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all
+                    ${rDows.includes(i)?'bg-red-600 text-white border-red-600':
+                      i===0?'border-red-200 text-red-400 bg-white':
+                      i===6?'border-blue-200 text-blue-400 bg-white':
+                      'border-gray-200 text-gray-500 bg-white'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* date range */}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <p className="text-xs font-bold text-gray-500 mb-1">開始月</p>
+              <div className="flex gap-1">
+                <select value={rFromY} onChange={e=>setRFromY(Number(e.target.value))}
+                  className="flex-1 bg-white border border-gray-200 rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:border-red-400">
+                  {YEARS.map(y=><option key={y}>{y}</option>)}
+                </select>
+                <select value={rFromM} onChange={e=>setRFromM(Number(e.target.value))}
+                  className="flex-1 bg-white border border-gray-200 rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:border-red-400">
+                  {MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-bold text-gray-500 mb-1">終了月</p>
+              <div className="flex gap-1">
+                <select value={rToY} onChange={e=>setRToY(Number(e.target.value))}
+                  className="flex-1 bg-white border border-gray-200 rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:border-red-400">
+                  {YEARS.map(y=><option key={y}>{y}</option>)}
+                </select>
+                <select value={rToM} onChange={e=>setRToM(Number(e.target.value))}
+                  className="flex-1 bg-white border border-gray-200 rounded-lg px-1 py-1.5 text-xs focus:outline-none focus:border-red-400">
+                  {MONTHS.map((mo,i)=><option key={i} value={i}>{mo}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+          {/* preview count + apply */}
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-gray-500">
+              {rDows.length>0
+                ? `プレビュー: ${computeRepeatDates().length}件の予定`
+                : '曜日を選択してください'}
+            </p>
+            <button onClick={applyRepeat}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${rDows.length>0?'bg-red-600 hover:bg-red-700 text-white':'bg-gray-200 text-gray-400 cursor-not-allowed'}`}>
+              カレンダーに反映
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── mini calendar ── */}
+      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
+        {/* calendar header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+          <button onClick={prevM} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors text-base">‹</button>
+          <span className="text-sm font-bold text-gray-700">{py}年 {pm+1}月</span>
+          <button onClick={nextM} className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-red-50 text-gray-500 hover:text-red-600 transition-colors text-base">›</button>
+        </div>
+        {/* weekday labels */}
+        <div className="picker-grid px-2 pt-2">
+          {JP_DOW.map((d,i)=>(
+            <div key={d} className={`text-center text-xs font-bold py-1 ${i===0?'text-red-400':i===6?'text-blue-400':'text-gray-400'}`}>{d}</div>
+          ))}
+        </div>
+        {/* days */}
+        <div className="picker-grid px-2 pb-2">
+          {Array.from({length:fst}).map((_,i)=><div key={`e${i}`} />)}
+          {Array.from({length:days}).map((_,i)=>{
+            const d=i+1, dow=(fst+i)%7;
+            const ds=toStr(py,pm,d);
+            const isSel    = selSet.has(ds);
+            const isToday  = ds===todayStr;
+            const isRepeat = repeatInMonth.has(ds);
+            let cls='pday';
+            if(dow===0) cls+=' psun';
+            if(dow===6) cls+=' psat';
+            if(isToday)  cls+=' ptoday';
+            if(isRepeat) cls+=' prepeat';
+            if(isSel)    cls+=' pselected';
+            return (
+              <div key={d} className={cls} onClick={()=>toggleDay(ds)}>{d}</div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* hint */}
+      {mode==='multi' && <p className="text-xs text-gray-400 text-center">日付をタップして複数選択できます</p>}
+      {mode==='repeat' && <p className="text-xs text-gray-400 text-center">「カレンダーに反映」で選択日がカレンダーに追加されます</p>}
+    </div>
+  );
+}
+
+// ── Detail Modal ───────────────────────────────────────────────────────────────
+function Modal({ schedule, isAdmin, currentUser, onClose, onEdit, onDelete, onAttend }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const att = schedule.attendance;
+  const myStatus = att[currentUser]||'pending';
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+      onClick={e=>{ if(e.target===e.currentTarget) onClose(); }}>
+      <div className="modal-box bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="bg-red-600 px-5 pt-5 pb-4 relative">
+          <button onClick={onClose} className="absolute top-4 right-4 text-red-200 hover:text-white text-xl leading-none font-bold">✕</button>
+          <span className="inline-block bg-white/20 text-white text-xs font-bold px-2 py-0.5 rounded-full mb-2">{TYPE_LABEL[schedule.type]}</span>
+          <h2 className="oswald text-white text-2xl font-bold leading-tight">{schedule.title}</h2>
+          <p className="text-red-100 text-sm mt-1">{schedule.date.replace(/-/g,'/')} &nbsp;|&nbsp; {schedule.time}</p>
+          <p className="text-red-100 text-sm">📍 {schedule.place}</p>
+        </div>
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4 bg-gray-50">
+          {schedule.body&&(
+            <div className="bg-white rounded-xl px-4 py-3 border border-gray-100">
+              <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">内容</h3>
+              <p className="text-gray-700 text-sm leading-relaxed">{schedule.body}</p>
+            </div>
+          )}
+          {!isAdmin&&(
+            <div className="bg-white rounded-xl px-4 py-3 border border-gray-100">
+              <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">あなたの出欠</h3>
+              <div className="flex gap-2">
+                {[['present','出席'],['absent','欠席'],['pending','保留']].map(([val,label])=>(
+                  <button key={val} onClick={()=>onAttend(schedule.id,currentUser,val)}
+                    className={`presence-btn flex-1 py-2 rounded-lg border text-sm font-bold ${myStatus===val?`active-${val}`:'border-gray-200 text-gray-400 bg-gray-50'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="bg-white rounded-xl px-4 py-3 border border-gray-100">
+            <h3 className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-2">参加者一覧</h3>
+            <div className="space-y-1.5">
+              {MEMBERS.map(m=>{
+                const s=att[m]||'pending';
+                const icon=s==='present'?'✓':s==='absent'?'✗':'?';
+                const col=s==='present'?'text-green-600':s==='absent'?'text-red-500':'text-amber-500';
+                const bg=s==='present'?'bg-green-50':s==='absent'?'bg-red-50':'bg-amber-50';
+                return (
+                  <div key={m} className={`flex items-center justify-between rounded-lg px-3 py-2 ${bg}`}>
+                    <span className="text-gray-700 text-sm font-medium">{m}</span>
+                    <span className={`font-bold text-xs ${col}`}>{icon} {s==='present'?'出席':s==='absent'?'欠席':'保留'}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {isAdmin&&(
+          <div className="border-t border-gray-100 bg-white px-5 py-3 flex gap-2">
+            <button onClick={onEdit} className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-lg text-sm transition-colors">編集</button>
+            {confirmDelete
+              ? <><button onClick={()=>onDelete(schedule.id)} className="flex-1 bg-red-700 hover:bg-red-800 text-white font-bold py-2 rounded-lg text-sm">本当に削除</button>
+                  <button onClick={()=>setConfirmDelete(false)} className="px-4 bg-gray-100 text-gray-600 rounded-lg text-sm font-bold">戻る</button></>
+              : <button onClick={()=>setConfirmDelete(true)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 rounded-lg text-sm transition-colors">削除</button>
+            }
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── EventForm ──────────────────────────────────────────────────────────────────
+function EventForm({ initial, onSave, onCancel }) {
+  const initDates = initial?.date ? [initial.date] : [];
+  const [form, setForm]         = useState(initial||{title:'',type:'practice',place:'',time:'',body:''});
+  const [selectedDates, setDates] = useState(initDates);
+  const set = (k,v)=>setForm(p=>({...p,[k]:v}));
+  const valid = form.title && selectedDates.length > 0;
+
+  function handleSave() {
+    if(!valid) return;
+    onSave(form, selectedDates);
+  }
+
+  return (
+    <div className="modal-backdrop fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 backdrop-blur-sm p-0 sm:p-4"
+      onClick={e=>{ if(e.target===e.currentTarget) onCancel(); }}>
+      <div className="modal-box bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col max-h-[96vh]">
+        <div className="bg-red-600 px-5 pt-5 pb-4 flex items-center justify-between flex-shrink-0">
+          <h2 className="oswald text-white text-xl font-bold">{initial?'予定を編集':'予定を追加'}</h2>
+          <button onClick={onCancel} className="text-red-200 hover:text-white text-xl font-bold">✕</button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4 bg-gray-50">
+
+          {/* basic fields */}
+          {[['タイトル *','title'],['場所','place'],['時間（例: 19:00〜21:00）','time']].map(([label,key])=>(
+            <div key={key}>
+              <label className="block text-gray-500 text-xs font-bold mb-1">{label}</label>
+              <input value={form[key]||''} onChange={e=>set(key,e.target.value)} placeholder={label}
+                className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-sm focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100" />
+            </div>
+          ))}
+
+          {/* type */}
+          <div>
+            <label className="block text-gray-500 text-xs font-bold mb-2">種別</label>
+            <div className="grid grid-cols-4 gap-2">
+              {Object.entries(TYPE_LABEL).map(([val,label])=>(
+                <button key={val} onClick={()=>set('type',val)}
+                  className={`py-2 rounded-lg text-xs font-bold border transition-all ${form.type===val?TYPE_CLASS[val]:'border-gray-200 text-gray-400 bg-white'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* body */}
+          <div>
+            <label className="block text-gray-500 text-xs font-bold mb-1">内容</label>
+            <textarea value={form.body||''} onChange={e=>set('body',e.target.value)} rows={2}
+              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-800 text-sm resize-none focus:outline-none focus:border-red-400 focus:ring-1 focus:ring-red-100" />
+          </div>
+
+          {/* date picker */}
+          <div>
+            <label className="block text-gray-500 text-xs font-bold mb-2">日付選択</label>
+            <MultiDatePicker selectedDates={selectedDates} onChange={setDates} />
+          </div>
+
+          {/* selected chips */}
+          {selectedDates.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-gray-500 text-xs font-bold">選択中の日付 ({selectedDates.length}件)</label>
+                {selectedDates.length > 1 && (
+                  <button onClick={()=>setDates([])} className="text-xs text-red-400 hover:text-red-600 font-bold">すべてクリア</button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                {selectedDates.map(d=>(
+                  <span key={d} className="chip">
+                    {d.replace(/-/g,'/')}
+                    <button className="chip-x" onClick={()=>setDates(prev=>prev.filter(x=>x!==d))}>×</button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* image dummy */}
+          <div className="border-2 border-dashed border-gray-200 rounded-xl p-4 text-center bg-white">
+            <p className="text-gray-400 text-xs">📷 画像添付（ダミー）</p>
+            <p className="text-gray-300 text-xs mt-1">タップして画像を追加</p>
+          </div>
+        </div>
+        <div className="border-t border-gray-100 bg-white px-5 py-3 flex gap-2 flex-shrink-0">
+          <button onClick={onCancel} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-600 font-bold py-2 rounded-lg text-sm transition-colors">キャンセル</button>
+          <button onClick={handleSave}
+            className={`flex-1 font-bold py-2 rounded-lg text-sm transition-colors ${valid?'bg-red-600 hover:bg-red-700 text-white':'bg-gray-100 text-gray-300 cursor-not-allowed'}`}>
+            {selectedDates.length > 1 ? `${selectedDates.length}件を一括保存` : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── App ────────────────────────────────────────────────────────────────────────
+function App() {
+  const [schedules, setSchedules]       = useState(loadData);
+  const [currentYear, setCurrentYear]   = useState(NOW.getFullYear());
+  const [currentMonth, setCurrentMonth] = useState(NOW.getMonth());
+  const [isAdmin, setIsAdmin]   = useState(false);
+  const [currentUser]           = useState(MEMBERS[0]);
+  const [selected, setSelected] = useState(null);
+  const [editing, setEditing]   = useState(null);
+
+  useEffect(()=>{ saveData(schedules); },[schedules]);
+
+  const monthSchedules = useMemo(()=>
+    schedules.filter(s=>{ const d=new Date(s.date); return d.getFullYear()===currentYear&&d.getMonth()===currentMonth; }),
+    [schedules,currentYear,currentMonth]);
+
+  const byDate = useMemo(()=>{
+    const map={};
+    monthSchedules.forEach(s=>{ (map[s.date]||(map[s.date]=[])).push(s); });
+    return map;
+  },[monthSchedules]);
+
+  const prevMonth=()=>{ if(currentMonth===0){setCurrentYear(y=>y-1);setCurrentMonth(11);}else setCurrentMonth(m=>m-1); };
+  const nextMonth=()=>{ if(currentMonth===11){setCurrentYear(y=>y+1);setCurrentMonth(0);}else setCurrentMonth(m=>m+1); };
+
+  // save: form + array of dates → create one schedule per date
+  const saveSchedule=(form, dates)=>{
+    if(editing?.id) {
+      // editing: update only the single schedule's date = dates[0]
+      setSchedules(ss=>ss.map(s=>s.id===editing.id?{...s,...form,date:dates[0]}:s));
+    } else {
+      const newOnes = dates.map(date=>({
+        ...form, date, id: `${Date.now()}-${date}`, attendance: initialAttendance()
+      }));
+      setSchedules(ss=>[...ss,...newOnes]);
+    }
+    setEditing(null); setSelected(null);
+  };
+  const deleteSchedule=(id)=>{ setSchedules(ss=>ss.filter(s=>s.id!==id)); setSelected(null); };
+  const attend=(id,user,status)=>setSchedules(ss=>ss.map(s=>s.id===id?{...s,attendance:{...s.attendance,[user]:status}}:s));
+
+  const selectedSchedule=schedules.find(s=>s.id===selected);
+  const days=daysInMonth(currentYear,currentMonth);
+  const startDay=firstDow(currentYear,currentMonth);
+  const WEEKDAYS=['日','月','火','水','木','金','土'];
+
+  return (
+    <div className="min-h-screen bg-gray-50 pb-24">
+
+      {/* header */}
+      <header className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-30">
+        <div className="max-w-2xl mx-auto px-0 flex items-stretch">
+          <div className="w-1.5 bg-red-600 flex-shrink-0" />
+          <div className="flex items-center justify-between flex-1 px-4 py-3">
+            <div>
+              <h1 className="oswald text-gray-900 text-2xl font-bold tracking-wide leading-none">TEAM SCHEDULE</h1>
+              <p className="text-gray-400 text-xs mt-0.5">ログイン中：{currentUser}</p>
+            </div>
+            <button onClick={()=>setIsAdmin(a=>!a)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${isAdmin?'bg-red-50 border-red-300 text-red-600':'bg-gray-50 border-gray-200 text-gray-500'}`}>
+              <span className={`w-2 h-2 rounded-full ${isAdmin?'bg-red-500':'bg-gray-300'}`} />
+              {isAdmin?'管理者モード':'メンバーモード'}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-2xl mx-auto px-2 sm:px-4 pt-5">
+
+        {/* month nav */}
+        <div className="flex items-center justify-between mb-4 px-2">
+          <button onClick={prevMonth} className="w-9 h-9 flex items-center justify-center rounded-full bg-white border border-gray-200 hover:border-red-300 hover:text-red-600 text-gray-500 text-lg shadow-sm transition-colors">‹</button>
+          <h2 className="oswald text-gray-900 text-2xl font-bold">{currentYear}年 {currentMonth+1}月</h2>
+          <button onClick={nextMonth} className="w-9 h-9 flex items-center justify-center rounded-full bg-white border border-gray-200 hover:border-red-300 hover:text-red-600 text-gray-500 text-lg shadow-sm transition-colors">›</button>
+        </div>
+
+        {/* calendar */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="calendar-grid border-b border-gray-100">
+            {WEEKDAYS.map((d,i)=>(
+              <div key={d} className={`text-center text-xs font-bold py-2 ${i===0?'text-red-500':i===6?'text-blue-400':'text-gray-400'}`}>{d}</div>
+            ))}
+          </div>
+          <div className="calendar-grid">
+            {Array.from({length:startDay}).map((_,i)=>(
+              <div key={`e${i}`} className="day-cell border-r border-b border-gray-50 bg-gray-50/60" />
+            ))}
+            {Array.from({length:days}).map((_,i)=>{
+              const d=i+1, dow=(startDay+i)%7;
+              const ds=toStr(currentYear,currentMonth,d);
+              const events=byDate[ds]||[];
+              const isToday=ds===todayStr;
+              return (
+                <div key={d} className="day-cell border-r border-b border-gray-100 p-1 hover:bg-red-50/40 transition-colors">
+                  <div className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full mb-0.5 mx-auto
+                    ${isToday?'bg-red-600 text-white':dow===0?'text-red-500':dow===6?'text-blue-400':'text-gray-600'}`}>{d}</div>
+                  <div className="space-y-0.5">
+                    {events.slice(0,2).map(ev=>(
+                      <button key={ev.id} onClick={()=>setSelected(ev.id)}
+                        className={`w-full text-left px-1 py-0.5 rounded text-xs truncate font-medium leading-tight hidden sm:block ${TYPE_CLASS[ev.type]}`}>
+                        {ev.title}
+                      </button>
+                    ))}
+                    <div className="flex flex-wrap gap-0.5 justify-center sm:hidden">
+                      {events.map(ev=>(
+                        <button key={ev.id} onClick={()=>setSelected(ev.id)}
+                          className={`w-2 h-2 rounded-full ${DOT_CLASS[ev.type]}`} />
+                      ))}
+                    </div>
+                    {events.length>2&&<p className="text-gray-400 text-xs text-center hidden sm:block">+{events.length-2}</p>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* legend */}
+        <div className="flex flex-wrap gap-4 mt-3 px-2">
+          {Object.entries(TYPE_LABEL).map(([k,v])=>(
+            <div key={k} className="flex items-center gap-1.5">
+              <div className={`w-2.5 h-2.5 rounded-full ${DOT_CLASS[k]}`} />
+              <span className="text-gray-500 text-xs">{v}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* event list */}
+        <div className="mt-6">
+          <div className="flex items-center gap-2 px-2 mb-3">
+            <div className="w-1 h-5 bg-red-600 rounded-full" />
+            <h3 className="oswald text-gray-800 text-lg font-bold">今月の予定</h3>
+          </div>
+          {monthSchedules.length===0
+            ? <div className="bg-white rounded-xl border border-gray-100 px-4 py-8 text-center">
+                <p className="text-gray-400 text-sm">予定はありません</p>
+              </div>
+            : <div className="space-y-2">
+                {[...monthSchedules].sort((a,b)=>a.date.localeCompare(b.date)).map(s=>(
+                  <button key={s.id} onClick={()=>setSelected(s.id)}
+                    className="event-card w-full text-left bg-white border border-gray-100 rounded-xl px-4 py-3 flex items-center gap-3 shadow-sm">
+                    <div className={`w-1 h-12 rounded-full flex-shrink-0 ${DOT_CLASS[s.type]}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-800 font-bold text-sm truncate">{s.title}</p>
+                      <p className="text-gray-400 text-xs">{s.date.replace(/-/g,'/')} &nbsp;{s.time}</p>
+                      <p className="text-gray-400 text-xs truncate">📍{s.place}</p>
+                    </div>
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${TYPE_CLASS[s.type]}`}>{TYPE_LABEL[s.type]}</span>
+                      <AttendanceSummary attendance={s.attendance} />
+                    </div>
+                  </button>
+                ))}
+              </div>
+          }
+        </div>
+      </main>
+
+      {/* FAB */}
+      {isAdmin&&(
+        <button onClick={()=>setEditing({})}
+          className="fixed bottom-6 right-6 w-14 h-14 bg-red-600 hover:bg-red-700 text-white rounded-full shadow-xl text-2xl flex items-center justify-center transition-colors z-30">
+          ＋
+        </button>
+      )}
+
+      {selectedSchedule&&!editing&&(
+        <Modal schedule={selectedSchedule} isAdmin={isAdmin} currentUser={currentUser}
+          onClose={()=>setSelected(null)} onEdit={()=>setEditing(selectedSchedule)}
+          onDelete={deleteSchedule} onAttend={attend} />
+      )}
+      {editing!==null&&(
+        <EventForm initial={editing?.id?editing:null} onSave={saveSchedule} onCancel={()=>setEditing(null)} />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
